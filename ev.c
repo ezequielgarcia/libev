@@ -37,6 +37,8 @@
  * either the BSD or the GPL.
  */
 
+#define _GNU_SOURCE
+
 /* this big block deduces configuration from config.h */
 #ifndef EV_STANDALONE
 # ifdef EV_CONFIG_H
@@ -200,6 +202,7 @@
 # include <sys/time.h>
 # include <sys/wait.h>
 # include <unistd.h>
+# include <dlfcn.h>
 #else
 # include <io.h>
 # define WIN32_LEAN_AND_MEAN
@@ -1549,6 +1552,24 @@ typedef ev_watcher_time *WT;
 
 #define ev_active(w) ((W)(w))->active
 #define ev_at(w) ((WT)(w))->at
+
+#if EV_PROFILE_WATCHER
+#define EV_CB_INVOKE(watcher,revents)			\
+do {							\
+  struct timespec ts0, ts1;				\
+  ev_tstamp weight;					\
+  clock_gettime (CLOCK_MONOTONIC, &ts0);		\
+  (watcher)->cb (EV_A_ (watcher), (revents));		\
+  clock_gettime (CLOCK_MONOTONIC, &ts1);		\
+  weight = (ts1.tv_sec - ts0.tv_sec) +			\
+    (ts1.tv_nsec - ts0.tv_nsec ) * 1e-9;		\
+  (watcher)->weight += weight;				\
+  if (weight > (watcher)->max_weight)			\
+    (watcher)->max_weight = weight;			\
+} while (0)
+#else
+#define EV_CB_INVOKE(watcher,revents) (watcher)->cb (EV_A_ (watcher), (revents))
+#endif
 
 #if EV_USE_REALTIME
 /* sig_atomic_t is used to avoid per-thread variables or locking but still */
@@ -3560,6 +3581,39 @@ time_update (EV_P_ ev_tstamp max_block)
     }
 }
 
+#if EV_PROFILE_WATCHER
+
+static struct ev_watcher ev_head_watcher;
+EV_API_DECL struct ev_watcher *ev_head_watcher_ptr = &ev_head_watcher;
+
+void
+ev_write_profile_watcher (EV_P)
+{
+  W w;
+  fprintf (stderr, "(libev) %-20s: %-20s %s\n",
+    "Watcher callback",
+    "Seconds",
+    "Max seconds");
+  for (w = ev_head_watcher_ptr; w->cb; w = w->profiled_next) {
+    const char *name = NULL;
+    Dl_info dlinfo;
+
+    if (dladdr(w->cb, &dlinfo))
+          name = dlinfo.dli_sname;
+    if (name)
+      fprintf (stderr, "(libev) %-20s: %-20e %e\n",
+        name, w->weight, w->max_weight);
+    else
+      fprintf (stderr, "(libev) %-20p: %-20e %e\n",
+        w->cb, w->weight, w->max_weight);
+    }
+}
+#else
+void
+ev_write_profile_watcher (EV_P)
+{}
+#endif
+
 int
 ev_run (EV_P_ int flags)
 {
@@ -3728,6 +3782,8 @@ ev_run (EV_P_ int flags)
 #if EV_FEATURE_API
   --loop_depth;
 #endif
+
+  ev_write_profile_watcher (EV_A);
 
   return activecnt;
 }

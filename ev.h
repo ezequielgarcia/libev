@@ -40,6 +40,8 @@
 #ifndef EV_H_
 #define EV_H_
 
+#define EV_PROFILE_WATCHER 1
+
 #ifdef __cplusplus
 # define EV_CPP(x) x
 # if __cplusplus >= 201103L
@@ -139,6 +141,10 @@ EV_CPP(extern "C" {)
 
 #ifndef EV_WALK_ENABLE
 # define EV_WALK_ENABLE 0 /* not yet */
+#endif
+
+#ifndef EV_PROFILE_WATCHER
+# define EV_PROFILE_WATCHER 0
 #endif
 
 /*****************************************************************************/
@@ -248,9 +254,6 @@ enum {
 #ifndef EV_CB_DECLARE
 # define EV_CB_DECLARE(type) void (*cb)(EV_P_ struct type *w, int revents);
 #endif
-#ifndef EV_CB_INVOKE
-# define EV_CB_INVOKE(watcher,revents) (watcher)->cb (EV_A_ (watcher), (revents))
-#endif
 
 /* not official, do not use */
 #define EV_CB(type,name) void name (EV_P_ struct ev_ ## type *w, int revents)
@@ -278,11 +281,30 @@ enum {
 # define EV_DECL_PRIORITY int priority;
 #endif
 
+#if EV_PROFILE_WATCHER
+EV_API_DECL struct ev_watcher *ev_head_watcher_ptr;
+# define EV_PROFILE \
+  ev_tstamp weight; \
+  ev_tstamp max_weight; \
+  struct ev_watcher *profiled_next; /* private */
+
+# define ev_add_profiled(ev) do { \
+  ((ev_watcher *)(void *)(ev))->weight = 0;	\
+  ((ev_watcher *)(void *)(ev))->max_weight = 0;	\
+  ((ev_watcher *)(void *)(ev))->profiled_next = ev_head_watcher_ptr; \
+  ev_head_watcher_ptr = (ev_watcher *)(void *)(ev); \
+} while (0)
+#else
+# define EV_PROFILE
+# define ev_add_profiled(ev) (ev)
+#endif
+
 /* shared by all watchers */
 #define EV_WATCHER(type)			\
   int active; /* private */			\
   int pending; /* private */			\
   EV_DECL_PRIORITY /* private */		\
+  EV_PROFILE					\
   EV_COMMON /* rw */				\
   EV_CB_DECLARE (type) /* private */
 
@@ -639,6 +661,8 @@ enum {
 EV_API_DECL int  ev_run (EV_P_ int flags EV_CPP (= 0));
 EV_API_DECL void ev_break (EV_P_ int how EV_CPP (= EVBREAK_ONE)) EV_THROW; /* break out of the loop */
 
+EV_API_DECL void ev_write_profile_watcher (EV_P) EV_THROW;
+
 /*
  * ref/unref can be used to add or remove a refcount on the mainloop. every watcher
  * keeps one reference. if you have a long-running watcher you never unregister that
@@ -686,6 +710,7 @@ EV_API_DECL void ev_resume  (EV_P) EV_THROW;
 #define ev_init(ev,cb_) do {			\
   ((ev_watcher *)(void *)(ev))->active  =	\
   ((ev_watcher *)(void *)(ev))->pending = 0;	\
+  ev_add_profiled ((ev));			\
   ev_set_priority ((ev), 0);			\
   ev_set_cb ((ev), cb_);			\
 } while (0)
